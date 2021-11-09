@@ -1,15 +1,19 @@
 '''
+As a fully functional initial prototype, this script can be run as is alongside NVIDIA Broadcast. Simply install and startup NVIDIA broadcast, configure it to use the default denoising and echo reduction features, and keep the default audio input setting set below. https://www.nvidia.com/en-us/geforce/broadcasting/broadcast-app/
+
+This default POC mode can be replaced by imlementing additional proccess_fnc functions to do audio processing in line.
+
+Future work is to include methods that are able to run directly on a mobile device (such as some traditional ML methods or simpler TensorFlow models) or rewriting this stack to directly leverage the NVIDIA Maxine functionality that powers NVIDIA Broadcast. https://developer.nvidia.com/maxine
 
 Example code ported from the following sources:
     https://makersportal.com/blog/2018/8/23/recording-audio-on-the-raspberry-pi-with-python-and-a-usb-microphone
     https://people.csail.mit.edu/hubert/pyaudio/docs/
-
 '''
 import pyaudio
 import wave
 
 # The device name for the microphone, get by running in "GET_DEVICE_MODE"
-input_device = 'Headset (HX 831s)'
+input_device = 'Microphone (NVIDIA Broadcast)'
 input_device_idx = -1 # Do not change, dynamically set based on name
 
 # The device name for the speakers, get by running in "GET_DEVICE_MODE"
@@ -133,10 +137,38 @@ def sample_stream(input_device_idx, output_device_idx, record_secs=10, audio_out
 ################### End of Sample / Test Code ####################
 ##################################################################
 
+def stream_audio(input_device_idx, output_device_idx, process_fnc, audio_output_name='audio_sample.wav', sample_rate=44100, chunk=4096, chans=1, format=pyaudio.paInt16):
+    '''Continuosly take audio input, prosess it through <process_fnc>, and play it to an output device'''
+    print(f'Recording from input device: {input_device_idx} and playing back to device {output_device_idx}')
+    audio = pyaudio.PyAudio()
+
+    # Create pyaudio stream
+    input_stream = audio.open(format=format, rate=sample_rate, channels=chans, \
+                        input_device_index=input_device_idx, input=True, \
+                        frames_per_buffer=chunk)
+    output_stream = audio.open(format=format, rate=sample_rate, channels=chans, \
+                        input_device_index=output_device_idx, output=True, \
+                        frames_per_buffer=chunk)
+
+    # loop through stream and append audio chunks to frame array
+    while True:
+        output_stream.write(
+            process_fnc(input_stream.read(chunk))
+        )
+
+    input_stream.stop_stream()
+    output_stream.stop_stream()
+    input_stream.close()
+    output_stream.close()
+    audio.terminate()
+
+def passthrough_audio(stream_chunk):
+    '''A passthrough function that does not alter audio and instead assumes something else like NVIDIA Broadcast is doing the heavy lifting'''
+    return stream_chunk
+
 
 if __name__ == "__main__":
-    mode = "setup"
-    mode = "test_setup"
+    mode = "run"
 
     if mode == "setup":
         get_device_names()
@@ -147,7 +179,10 @@ if __name__ == "__main__":
 
     if mode == "test_setup":
         #recording = record_clip(input_device_idx)
-        #play_sample_audio(output_device_idx)
-        #play_sample_framebuffer(output_device_idx, recording)
-        sample_stream(input_device_idx, output_device_idx)
+        play_sample_audio(output_device_idx)
+        play_sample_framebuffer(output_device_idx, recording)
+        sample_stream(input_device_idx, output_device_idx, 1000000)
         quit()
+
+    if mode == "run":
+        stream_audio(input_device_idx, output_device_idx, passthrough_audio)
